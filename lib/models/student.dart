@@ -11,6 +11,7 @@ class Student {
   final DateTime registeredAt;
   final DateTime? lastAttendance;
   final String? profileImage;
+  final String? registeredBy; // Teacher ID who registered this student
 
   Student({
     required this.id,
@@ -23,6 +24,7 @@ class Student {
     DateTime? registeredAt,
     this.lastAttendance,
     this.profileImage,
+    this.registeredBy,
   }) : registeredAt = registeredAt ?? DateTime.now();
 
   factory Student.fromFirestore(DocumentSnapshot doc) {
@@ -38,6 +40,7 @@ class Student {
       registeredAt: (data['registeredAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       lastAttendance: (data['lastAttendance'] as Timestamp?)?.toDate(),
       profileImage: data['profileImage'],
+      registeredBy: data['registeredBy'],
     );
   }
 
@@ -52,6 +55,7 @@ class Student {
       'registeredAt': Timestamp.fromDate(registeredAt),
       'lastAttendance': lastAttendance != null ? Timestamp.fromDate(lastAttendance!) : null,
       'profileImage': profileImage,
+      'registeredBy': registeredBy,
     };
   }
 }
