@@ -19,7 +19,6 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
   bool _isLoading = false;
   Map<String, double>? _selectedLocation;
   String _locationDisplayText = 'GPS Location: Not set';
-  final _subjectController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -32,7 +31,7 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
       ),
       body: Column(
         children: [
-           Card(
+          Card(
             margin: const EdgeInsets.all(16),
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -111,20 +110,6 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
                       ),
                     ),
                     const SizedBox(height: 16),
-                    TextFormField(
-                      controller: _subjectController,
-                      decoration: const InputDecoration(
-                        labelText: 'Subject',
-                        border: OutlineInputBorder(),
-                      ),
-                      validator: (value) {
-                        if (value == null || value.isEmpty) {
-                          return 'Please enter subject';
-                        }
-                        return null;
-                      },
-                    ),
-                    const SizedBox(height: 16),
                     SizedBox(
                       width: double.infinity,
                       child: ElevatedButton(
@@ -139,7 +124,7 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
               ),
             ),
           ),
-           Expanded(
+          Expanded(
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Column(
@@ -325,7 +310,7 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
         id: '',
         name: _nameController.text.trim(),
         teacherId: FirebaseAuth.instance.currentUser!.uid,
-        subject: _subjectController.text.trim(),
+        subject: '',
         schedule: [],
         location: _selectedLocation!,
       );
@@ -333,7 +318,6 @@ class _ClassManagementScreenState extends State<ClassManagementScreen> {
       await _classService.createClass(classData);
 
       _nameController.clear();
-      _subjectController.clear();
       setState(() {
         _selectedLocation = null;
         _locationDisplayText = 'GPS Location: Not set';

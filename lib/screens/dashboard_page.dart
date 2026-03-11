@@ -6,6 +6,8 @@ import 'package:face/screens/teacher/class_management_screen.dart';
 import 'package:face/screens/teacher/attendance_report_screen.dart';
 import 'package:face/screens/teacher/student_list_screen.dart';
 import 'package:face/services/student_service.dart';
+import 'package:face/services/class_service.dart';
+import 'package:face/models/student.dart';
 import 'package:flutter_animate/flutter_animate.dart';
 import 'package:iconsax/iconsax.dart';
 import 'package:page_transition/page_transition.dart';
@@ -21,11 +23,15 @@ class DashboardPage extends StatefulWidget {
 class _DashboardPageState extends State<DashboardPage> {
   final AuthService _authService = AuthService();
   final StudentService _studentService = StudentService();
+  final ClassService _classService = ClassService();
   
   int totalStudents = 0;
   int presentToday = 0;
   int absentToday = 0;
+  int totalClasses = 0;
   bool _isLoadingStats = true;
+  List<Map<String, dynamic>> _topStudents = [];
+  bool _isLoadingTopStudents = true;
 
   @override
   void initState() {
@@ -36,13 +42,24 @@ class _DashboardPageState extends State<DashboardPage> {
   Future<void> _loadAttendanceStats() async {
     final currentUser = FirebaseAuth.instance.currentUser;
     if (currentUser != null) {
+      // Get attendance stats
       final stats = await _studentService.getTeacherAttendanceStats(currentUser.uid);
+      
+      // Get class count
+      final classes = await _classService.getClassesByTeacher(currentUser.uid).first;
+      
+      // Get top students
+      final topStudents = await _studentService.getTopStudents(currentUser.uid, limit: 3);
+      
       if (mounted) {
         setState(() {
           totalStudents = stats['totalStudents'] ?? 0;
           presentToday = stats['presentToday'] ?? 0;
           absentToday = stats['absentToday'] ?? 0;
+          totalClasses = classes.length;
+          _topStudents = topStudents;
           _isLoadingStats = false;
+          _isLoadingTopStudents = false;
         });
       }
     }
@@ -228,11 +245,83 @@ class _DashboardPageState extends State<DashboardPage> {
                       child: _buildQuickStatCard(
                         icon: Icons.class_,
                         label: 'Classes',
-                        value: '0', // Can be updated with actual class count
+                        value: totalClasses.toString(),
                         color: Colors.purple,
                       ),
                     ),
                   ],
+                ),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Top Students Ranking Card
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16),
+                child: Card(
+                  elevation: 4,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Padding(
+                    padding: const EdgeInsets.all(20),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(
+                              Icons.emoji_events,
+                              color: Colors.amber.shade700,
+                            ),
+                            const SizedBox(width: 8),
+                            const Text(
+                              'Top Performers',
+                              style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                            const Spacer(),
+                            Text(
+                              'Last 30 days',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                        if (_isLoadingTopStudents)
+                          const Center(child: CircularProgressIndicator())
+                        else if (_topStudents.isEmpty)
+                          const Center(
+                            child: Text(
+                              'No student data available',
+                              style: TextStyle(color: Colors.grey),
+                            ),
+                          )
+                        else
+                          ...List.generate(_topStudents.length, (index) {
+                            final studentData = _topStudents[index];
+                            final student = studentData['student'] as Student;
+                            final percentage = studentData['attendancePercentage'] as double;
+                            final presentCount = studentData['presentCount'] as int;
+                            final totalClasses = studentData['totalClasses'] as int;
+                            
+                            return _buildTopStudentTile(
+                              rank: index + 1,
+                              name: student.name,
+                              enrollmentNumber: student.enrollmentNumber,
+                              percentage: percentage,
+                              presentCount: presentCount,
+                              totalClasses: totalClasses,
+                            );
+                          }),
+                      ],
+                    ),
+                  ),
                 ),
               ),
 
@@ -275,7 +364,7 @@ class _DashboardPageState extends State<DashboardPage> {
                             type: PageTransitionType.rightToLeft,
                             child: const ClassManagementScreen(),
                           ),
-                        );
+                        ).then((_) => _loadAttendanceStats());
                       },
                     ),
                     _buildActionCard(
@@ -400,6 +489,111 @@ class _DashboardPageState extends State<DashboardPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildTopStudentTile({
+    required int rank,
+    required String name,
+    required String enrollmentNumber,
+    required double percentage,
+    required int presentCount,
+    required int totalClasses,
+  }) {
+    Color rankColor;
+    IconData? rankIcon;
+    
+    switch (rank) {
+      case 1:
+        rankColor = Colors.amber;
+        rankIcon = Icons.emoji_events;
+        break;
+      case 2:
+        rankColor = Colors.grey.shade400;
+        rankIcon = Icons.emoji_events;
+        break;
+      case 3:
+        rankColor = Colors.brown.shade300;
+        rankIcon = Icons.emoji_events;
+        break;
+      default:
+        rankColor = Colors.blue;
+        rankIcon = null;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: rankColor.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: rankColor.withValues(alpha: 0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            width: 40,
+            height: 40,
+            decoration: BoxDecoration(
+              color: rankColor,
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Center(
+              child: rankIcon != null 
+                  ? Icon(rankIcon, color: Colors.white, size: 20)
+                  : Text(
+                      '#$rank',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+            ),
+          ),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  name,
+                  style: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 14,
+                  ),
+                ),
+                Text(
+                  enrollmentNumber,
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Colors.grey[600],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.end,
+            children: [
+              Text(
+                '${percentage.toStringAsFixed(1)}%',
+                style: TextStyle(
+                  fontWeight: FontWeight.bold,
+                  fontSize: 16,
+                  color: percentage >= 75 ? Colors.green : percentage >= 50 ? Colors.orange : Colors.red,
+                ),
+              ),
+              Text(
+                '$presentCount/$totalClasses classes',
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.grey[600],
+                ),
+              ),
+            ],
+          ),
+        ],
       ),
     );
   }

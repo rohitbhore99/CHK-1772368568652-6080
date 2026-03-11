@@ -6,6 +6,8 @@ import 'package:google_mlkit_face_detection/google_mlkit_face_detection.dart';
 import 'package:face/services/face_recognition_service.dart';
 import 'package:face/services/attendance_service.dart';
 import 'package:face/services/student_service.dart';
+import 'package:face/services/class_service.dart';
+import 'package:face/models/class.dart';
 
 class FaceScanScreen extends StatefulWidget {
   const FaceScanScreen({super.key});
@@ -19,18 +21,21 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
   final FaceRecognitionService _faceService = FaceRecognitionService();
   final AttendanceService _attendanceService = AttendanceService();
   final StudentService _studentService = StudentService();
+  final ClassService _classService = ClassService();
 
   bool _isProcessing = false;
   bool _isCameraReady = false;
   String _statusMessage = 'Initializing camera...';
-  List<String> _availableClasses = [];
-  String? _selectedClassId;
+  Class? _enrolledClass;
+  bool _isLoadingClass = true;
+  bool _hasError = false;
+  String _errorMessage = '';
 
   @override
   void initState() {
     super.initState();
     _initializeCamera();
-    _loadAvailableClasses();
+    _loadEnrolledClass();
   }
 
   Future<void> _initializeCamera() async {
@@ -56,7 +61,7 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
       if (mounted) {
         setState(() {
           _isCameraReady = true;
-          _statusMessage = 'Camera ready. Select a class and tap to scan.';
+          _statusMessage = 'Camera ready. Tap to scan your face.';
         });
       }
     } catch (e) {
@@ -71,7 +76,6 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
       final frame = await _cameraController!.takePicture();
       frames.add(frame);
 
-      // Add small delay between captures to allow for movement
       if (i < count - 1) {
         await Future.delayed(const Duration(milliseconds: 300));
       }
@@ -80,16 +84,52 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
     return frames;
   }
 
-  Future<void> _loadAvailableClasses() async {
-     
-    setState(() {
-      _availableClasses = ['class1', 'class2', 'class3'];
-      _selectedClassId = _availableClasses.first;
-    });
+  Future<void> _loadEnrolledClass() async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) {
+      setState(() {
+        _isLoadingClass = false;
+        _hasError = true;
+        _errorMessage = 'User not logged in';
+      });
+      return;
+    }
+
+    try {
+      // Get student data using userId (auth user id)
+      final student = await _studentService.getStudentByUserId(currentUser.uid);
+      
+      if (student == null || student.classId.isEmpty) {
+        setState(() {
+          _isLoadingClass = false;
+          _hasError = true;
+          _errorMessage = 'No class enrolled. Please contact your teacher.';
+        });
+        return;
+      }
+
+      // Get the class details
+      final classData = await _classService.getClassById(student.classId);
+      
+      if (mounted) {
+        setState(() {
+          _enrolledClass = classData;
+          _isLoadingClass = false;
+        });
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() {
+          _isLoadingClass = false;
+          _hasError = true;
+          _errorMessage = 'Error loading class: $e';
+        });
+      }
+    }
   }
 
   Future<void> _scanFace() async {
-    if (!_isCameraReady || _selectedClassId == null) return;
+    if (!_isCameraReady || _enrolledClass == null) return;
 
     setState(() {
       _isProcessing = true;
@@ -97,10 +137,10 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
     });
 
     try {
-       setState(() => _statusMessage = 'Capturing frames for liveness check...\nPlease blink or move slightly.');
+      setState(() => _statusMessage = 'Capturing frames for liveness check...\nPlease blink or move slightly.');
       final frames = await _captureMultipleFrames(5);
 
-       setState(() => _statusMessage = 'Processing face...');
+      setState(() => _statusMessage = 'Processing face...');
       final faces = await _faceService.detectFaces(
         InputImage.fromFilePath(frames.first.path),
       );
@@ -109,11 +149,11 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
         throw 'No face detected. Please look at the camera.';
       }
 
-       setState(() => _statusMessage = 'Generating face embedding...');
+      setState(() => _statusMessage = 'Generating face embedding...');
       final imageBytes = await frames.first.readAsBytes();
       final embedding = await _faceService.generateEmbedding(imageBytes);
 
-       setState(() => _statusMessage = 'Checking liveness...');
+      setState(() => _statusMessage = 'Checking liveness...');
       final frameBytes = await Future.wait(
         frames.map((frame) => frame.readAsBytes())
       );
@@ -122,13 +162,13 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
         throw 'Liveness check failed (move your head or blink). Score: ${score.toStringAsFixed(3)}';
       }
 
-       final currentUser = FirebaseAuth.instance.currentUser!;
-      final student = await _studentService.getStudentById(currentUser.uid);
+      final currentUser = FirebaseAuth.instance.currentUser!;
+      final student = await _studentService.getStudentByUserId(currentUser.uid);
       if (student == null) {
         throw 'Student data not found. Please contact administrator.';
       }
 
-       setState(() => _statusMessage = 'Verifying identity...');
+      setState(() => _statusMessage = 'Verifying identity...');
       final similarity = _faceService.calculateSimilarity(
         embedding,
         student.faceEmbeddings,
@@ -138,17 +178,17 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
         throw 'Face verification failed. Please try again.';
       }
 
-       Position? position;
+      Position? position;
       try {
         position = await Geolocator.getCurrentPosition();
       } catch (e) {
         // Location not available, continue without it
       }
 
-       setState(() => _statusMessage = 'Marking attendance...');
+      setState(() => _statusMessage = 'Marking attendance...');
       await _attendanceService.markAttendance(
         studentId: currentUser.uid,
-        classId: _selectedClassId!,
+        classId: _enrolledClass!.id,
         faceEmbedding: embedding,
         storedEmbeddings: student.faceEmbeddings,
         location: position,
@@ -157,17 +197,17 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
       if (mounted) {
         setState(() => _statusMessage = 'Attendance marked successfully!');
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Attendance marked successfully!'),
+          SnackBar(
+            content: Text('Attendance marked for ${_enrolledClass!.name}!'),
             backgroundColor: Colors.green,
           ),
         );
 
-         Future.delayed(const Duration(seconds: 2), () {
+        Future.delayed(const Duration(seconds: 2), () {
           if (mounted) {
             setState(() {
               _isProcessing = false;
-              _statusMessage = 'Camera ready. Select a class and tap to scan.';
+              _statusMessage = 'Camera ready. Tap to scan your face.';
             });
           }
         });
@@ -203,28 +243,82 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
       ),
       body: Column(
         children: [
-           Padding(
+          // Class Info Card
+          Padding(
             padding: const EdgeInsets.all(16),
-            child: DropdownButtonFormField<String>(
-              value: _selectedClassId,
-              decoration: InputDecoration(
-                labelText: 'Select Class',
-                border: OutlineInputBorder(
-                  borderRadius: BorderRadius.circular(12),
-                ),
-              ),
-              items: _availableClasses.map((classId) {
-                return DropdownMenuItem(
-                  value: classId,
-                  child: Text('Class $classId'),
-                );
-              }).toList(),
-              onChanged: (value) {
-                setState(() => _selectedClassId = value);
-              },
-            ),
+            child: _isLoadingClass
+                ? const Card(
+                    child: Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Center(child: CircularProgressIndicator()),
+                    ),
+                  )
+                : _hasError
+                    ? Card(
+                        color: Colors.red.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Icon(Icons.error_outline, color: Colors.red.shade700),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  _errorMessage,
+                                  style: TextStyle(color: Colors.red.shade700),
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      )
+                    : Card(
+                        color: Colors.blue.shade50,
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Row(
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.all(8),
+                                decoration: BoxDecoration(
+                                  color: Colors.blue,
+                                  borderRadius: BorderRadius.circular(8),
+                                ),
+                                child: const Icon(
+                                  Icons.class_,
+                                  color: Colors.white,
+                                ),
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Enrolled Class',
+                                      style: TextStyle(
+                                        fontSize: 12,
+                                        color: Colors.grey,
+                                      ),
+                                    ),
+                                    Text(
+                                      _enrolledClass?.name ?? 'No class',
+                                      style: const TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ],
+                          ),
+                        ),
+                      ),
           ),
-           Expanded(
+          
+          // Camera Preview
+          Expanded(
             child: Container(
               margin: const EdgeInsets.all(16),
               decoration: BoxDecoration(
@@ -236,16 +330,25 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
                 child: _isCameraReady && _cameraController != null
                     ? CameraPreview(_cameraController!)
                     : Center(
-                        child: Text(
-                          _statusMessage,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(fontSize: 16),
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            const CircularProgressIndicator(),
+                            const SizedBox(height: 16),
+                            Text(
+                              _statusMessage,
+                              textAlign: TextAlign.center,
+                              style: const TextStyle(fontSize: 16),
+                            ),
+                          ],
                         ),
                       ),
               ),
             ),
           ),
-           Padding(
+          
+          // Status and Button
+          Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
               children: [
@@ -261,7 +364,7 @@ class _FaceScanScreenState extends State<FaceScanScreen> {
                 SizedBox(
                   width: double.infinity,
                   child: ElevatedButton(
-                    onPressed: _isProcessing || !_isCameraReady || _selectedClassId == null
+                    onPressed: _isProcessing || !_isCameraReady || _enrolledClass == null || _hasError
                         ? null
                         : _scanFace,
                     style: ElevatedButton.styleFrom(
