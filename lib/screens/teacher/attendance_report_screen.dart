@@ -55,7 +55,7 @@ class _AttendanceReportScreenState extends State<AttendanceReportScreen> {
                     builder: (context, snapshot) {
                       if (snapshot.hasData && snapshot.data!.isNotEmpty) {
                         return DropdownButtonFormField<String>(
-                          value: _selectedClassId,
+                          initialValue: _selectedClassId,
                           decoration: const InputDecoration(
                             labelText: 'Select Class',
                             border: OutlineInputBorder(),
