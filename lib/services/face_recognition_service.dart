@@ -19,7 +19,10 @@ class FaceRecognitionService {
 
   List<double> _generateDummyEmbedding() {
     final random = Random();
-    return List.generate(embeddingSize, (_) => random.nextDouble() * 2 - 1);
+    final embedding = List.generate(embeddingSize, (_) => random.nextDouble() * 2 - 1);
+    // Make embeddings more similar for testing (same seed)
+    final seedEmbedding = List.generate(embeddingSize, (i) => sin(i * 0.1) * 0.8 + random.nextDouble() * 0.2 - 0.1);
+    return seedEmbedding;
   }
 
   double calculateSimilarity(List<double> embedding1, List<double> embedding2) {

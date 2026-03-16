@@ -1,6 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:flutter/foundation.dart';
 import '../models/student.dart';
 import '../models/class.dart';
 import '../services/class_service.dart';
@@ -44,7 +47,7 @@ class StudentService {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      final student = Student(
+       final student = Student(
         id: '',
         userId: userId,
         classId: classId,
