@@ -337,7 +337,7 @@ class _StudentRegistrationPageState extends State<StudentRegistrationPage> {
                   }
 
                   return DropdownButtonFormField<String>(
-                    value: _selectedClass,
+                    initialValue: _selectedClass,
                     decoration: InputDecoration(
                       labelText: 'Class',
                       prefixIcon: const Icon(Icons.class_),

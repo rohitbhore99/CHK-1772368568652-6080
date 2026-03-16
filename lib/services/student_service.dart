@@ -3,10 +3,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import '../models/student.dart';
 import '../models/class.dart';
+import '../services/class_service.dart';
 
 class StudentService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final ClassService _classService = ClassService();
  
   Future<String> registerStudentWithAuth({
     required String email,
@@ -42,7 +44,7 @@ class StudentService {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-       final student = Student(
+      final student = Student(
         id: '',
         userId: userId,
         classId: classId,
@@ -54,7 +56,9 @@ class StudentService {
         registeredBy: registeredByTeacherId,
       );
 
-      await _db.collection('students').add(student.toMap());
+      final DocumentReference studentRef = await _db.collection('students').add(student.toMap());
+      final String studentDocId = studentRef.id;
+      await _classService.addStudentToClass(classId, studentDocId);
 
       return userId;
     } on FirebaseAuthException catch (e) {
@@ -74,7 +78,9 @@ class StudentService {
 
       if (existing.docs.isNotEmpty) throw 'Enrollment number already registered for this class';
 
-      await _db.collection('students').add(student.toMap());
+      final DocumentReference studentRef = await _db.collection('students').add(student.toMap());
+      final String studentDocId = studentRef.id;
+      await _classService.addStudentToClass(student.classId, studentDocId);
     } catch (e) {
       rethrow;
     }
@@ -308,7 +314,7 @@ class StudentService {
       
       final classData = Class.fromFirestore(classDoc);
       final teacherId = classData.teacherId;
-      if (teacherId == null || teacherId.isEmpty) return null;
+      if (teacherId.isEmpty) return null;
 
       // Get all classes for this teacher
       final classSnapshot = await _db
